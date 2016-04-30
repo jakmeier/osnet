@@ -63,7 +63,7 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
     /* Do any other initialization you need here */
 
     r->window_size = cc->window;
-	r->recv_buffer = malloc( sizeof(slice) * r->window_size);
+    r->recv_buffer = malloc( sizeof(slice) * r->window_size);
     assert(r->recv_buffer != NULL && "Malloc failed!");
 
     r->send_buffer = malloc( sizeof(slice) * r->window_size);
@@ -98,10 +98,10 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     if(n < 8) return;
     if(pkt_len != n ) return;
 
-	// verify checksum
+    // verify checksum
     if(cksum(pkt, n) != 0 ) return;
 
-	// mark acknowledged packets
+    // mark acknowledged packets
     if (r->send_seqno < pkt_ackno) {
         for (uint16_t i = r->send_seqno; i < pkt_ackno; i++) {
             r->send_buffer[i % r->window_size].marked = 0;
@@ -130,8 +130,8 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     r->recv_buffer[index].len    = n - 12;
     r->recv_buffer[index].marked = 1;
 
-	// initiate data output
-	if (pkt_seqno == r->recv_seqno) rel_output(r);
+    // initiate data output
+    if (pkt_seqno == r->recv_seqno) rel_output(r);
 }
 
 
@@ -146,7 +146,7 @@ void send_ack(rel_t *r) {
     pkt.len   = htons(8);
     pkt.ackno = htonl(r->recv_seqno);
 
-	// compute checksum
+    // compute checksum
     pkt.cksum = cksum(&pkt, 8);
     conn_sendpkt(r->c, &pkt, 8);
 }
