@@ -15,9 +15,9 @@
 #include "rlib.h"
 
 typedef struct slice {
-    uint16_t len;
-    char marked;            //  for unackwoledged packets
+    char marked;
     char segment[500];
+    uint16_t len;
 } slice;
 
 struct reliable_state {
@@ -26,12 +26,12 @@ struct reliable_state {
 
     conn_t *c;			/* This is the connection object */
 
-    /* Add your own data fields below this */
-    size_t window_size;
     slice* recv_buffer;
     slice* send_buffer;
+
     size_t recv_seqno;
     size_t send_seqno;
+    size_t window_size;
     size_t already_written;
 
 };
@@ -54,13 +54,11 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
         }
     }
 
-    r->c = c;
+    r->c    = c;
     r->next = rel_list;
     r->prev = &rel_list;
     if (rel_list) rel_list->prev = &r->next;
     rel_list = r;
-
-    /* Do any other initialization you need here */
 
     r->window_size = cc->window;
     r->recv_buffer = malloc( sizeof(slice) * r->window_size);
@@ -69,8 +67,8 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
     r->send_buffer = malloc( sizeof(slice) * r->window_size);
     assert(r->send_buffer != NULL && "Malloc failed!");
 
-    r->recv_seqno = 1;
-    r->send_seqno = 1;
+    r->recv_seqno      = 1;
+    r->send_seqno      = 1;
     r->already_written = 0;
 
     return r;
@@ -95,6 +93,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     uint16_t pkt_len   = ntohs(pkt->len);
     uint32_t pkt_ackno = ntohl(pkt->ackno);
 
+    // check size of packet
     if(n < 8) return;
     if(pkt_len != n ) return;
 
@@ -161,6 +160,7 @@ void rel_output (rel_t *r)
                                         &(s->segment) + r->already_written ,
                                         s->len - r->already_written
                                     );
+
         if (written == s->len - r->already_written) {
             // full packet written
             r->recv_seqno++;
@@ -174,6 +174,7 @@ void rel_output (rel_t *r)
         }
 
     }
+
     if (flag) {
         send_ack(r);
     }
@@ -183,13 +184,16 @@ void rel_timer ()
 {
     /* Retransmit any packets that need to be retransmitted */
     packet_t pkt;
+    slice current_slice;
     slice *send_buffer = rel_list->send_buffer;
     size_t window_size = rel_list->window_size;
-    size_t upper_bound = rel_list->send_seqno + window_size ;
+    size_t upper_bound = rel_list->send_seqno + window_size;
 
+    // go through window
     for(size_t slice_no = rel_list->recv_seqno; slice_no < upper_bound; slice_no++){
-        slice current_slice = send_buffer[slice_no % window_size];
+        current_slice = send_buffer[slice_no % window_size];
 
+        // if packet is unackwnoledged
         if(current_slice.marked == 0){
             pkt.len   = htons(current_slice.len);
             pkt.seqno = htonl(slice_no);
