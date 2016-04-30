@@ -15,11 +15,10 @@
 #include "rlib.h"
 
 typedef struct slice {
-		uint16_t len;
-		char marked;
-		char segment[500];
+    uint16_t len;
+    char marked;            //  for unackwoledged packets
+    char segment[500];
 } slice;
-
 
 struct reliable_state {
     rel_t *next;			/* Linked list for traversing all connections */
@@ -28,7 +27,7 @@ struct reliable_state {
     conn_t *c;			/* This is the connection object */
 
     /* Add your own data fields below this */
-	size_t	window_size;
+	size_t window_size;
 	slice* recv_buffer;
 	slice* send_buffer;
 	size_t recv_seqno;
@@ -37,6 +36,7 @@ struct reliable_state {
 
 };
 rel_t *rel_list;
+
 
 /* Creates a new reliable protocol session, returns NULL on failure.
 * ss is always NULL */
@@ -65,48 +65,48 @@ const struct config_common *cc)
 
     /* Do any other initialization you need here */
 
-	r->window_size = cc->window;
+    r->window_size = cc->window;
 	r->recv_buffer = malloc( sizeof(slice) * r->window_size);
-	assert(r->recv_buffer != NULL && "Malloc failed!");
+    assert(r->recv_buffer != NULL && "Malloc failed!");
 
-	r->send_buffer = malloc( sizeof(slice) * r->window_size);
-	assert(r->send_buffer != NULL && "Malloc failed!");
+    r->send_buffer = malloc( sizeof(slice) * r->window_size);
+    assert(r->send_buffer != NULL && "Malloc failed!");
 
-	r->recv_seqno = 1;
-	r->send_seqno = 1;
+    r->recv_seqno = 1;
+    r->send_seqno = 1;
 
     r->already_written = 0;
 
-	return r;
+    return r;
 }
 
 void
 rel_destroy (rel_t *r)
 {
-    if (r->next)
-        r->next->prev = r->prev;
+    if (r->next) r->next->prev = r->prev;
     *r->prev = r->next;
     conn_destroy (r->c);
 
     /* Free any other allocated memory here */
-		free(r->recv_buffer);
-		free(r->send_buffer);
-		free(r);
+    free(r->recv_buffer);
+    free(r->send_buffer);
+    free(r);
 }
 
 
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
-//TODO network to host endianess
+    //TODO network to host endianess
 	// check packet size
 	if(n < 8) return;
 	if(pkt->len != n ) return;
 
-	// varify checksum
+	// verify checksum
 	if(cksum(pkt, n) != 0 ) return;
 
-	// handle acknowledgment
+	// mark acknowledged packets
+    // ackno is the seqno the reciever is waiting for
 	if (r->send_seqno < pkt->ackno) {
 		uint16_t i;
 		for (i = r->send_seqno; i < pkt->ackno; i++) {
@@ -120,7 +120,9 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 	// handle data
 	// check if seqno is in current window range
-	if (pkt->seqno < r->recv_seqno || pkt->seqno >= r->recv_seqno + r->window_size ) return;
+    size_t lower_bound = r->recv_seqno;
+    size_t upper_bound = lower_bound + r-> window_size;
+	if (pkt->seqno < lower_bound || pkt->seqno >= upper_bound ) return;
 
 	// calculate index in window
 	size_t index = pkt->seqno % r->window_size;
@@ -129,8 +131,8 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	if (r->recv_buffer[index].marked) return;
 
 	// store data in window
-	memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n-12);
-	r->recv_buffer[index].len    = n -12;
+	memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
+	r->recv_buffer[index].len    = n - 12;
 	r->recv_buffer[index].marked = 1;
 
 	// initiate data output
@@ -149,12 +151,15 @@ rel_output (rel_t *r)
 {
 	//TODO endianess
 	while( r->recv_buffer[r->recv_seqno].marked ) {
-        slice* s = &(r->recv_buffer[r->recv_seqno] % r->window_size);
+        slice* s = &(r->recv_buffer[r->recv_seqno % r->window_size]);
         char flag = 0;
         size_t written = conn_output(
-										c,
-										&(s->segment) + r->already_written ,
-										s->len - r->already_written)
+                                        // c needs to be of type conn_t *
+                                        // c is currently not declared
+                                        // where do we get it from ?
+                                        c,
+                                        &(s->segment) + r->already_written ,
+                                        s->len - r->already_written)
                                     );
         if (written == s->len - r->already_written) {
             // full packet written
