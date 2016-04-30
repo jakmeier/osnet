@@ -40,9 +40,7 @@ rel_t *rel_list;
 
 /* Creates a new reliable protocol session, returns NULL on failure.
 * ss is always NULL */
-rel_t *
-rel_create (conn_t *c, const struct sockaddr_storage *ss,
-const struct config_common *cc)
+rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct config_common *cc)
 {
     rel_t *r;
 
@@ -80,8 +78,7 @@ const struct config_common *cc)
     return r;
 }
 
-void
-rel_destroy (rel_t *r)
+void rel_destroy (rel_t *r)
 {
     if (r->next) r->next->prev = r->prev;
     *r->prev = r->next;
@@ -94,25 +91,27 @@ rel_destroy (rel_t *r)
 }
 
 
-void
-rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
+void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
-    //TODO network to host endianess
-	// check packet size
+    // network to host endianess
+    uint16_t pkt_len   = ntohs(pkt->len);
+    uint32_t pkt_ackno = ntohl(pkt->ackno);
+
 	if(n < 8) return;
-	if(pkt->len != n ) return;
+	if(pkt_len != n ) return;
 
 	// verify checksum
 	if(cksum(pkt, n) != 0 ) return;
 
 	// mark acknowledged packets
     // ackno is the seqno the reciever is waiting for
-	if (r->send_seqno < pkt->ackno) {
+        
+	if (r->send_seqno < pkt_ackno) {
 		uint16_t i;
-		for (i = r->send_seqno; i < pkt->ackno; i++) {
+		for (i = r->send_seqno; i < pkt_ackno; i++) {
 			r->send_buffer[i % r->window_size].marked = 0;
 		}
-		r->send_seqno = pkt->ackno;
+		r->send_seqno = pkt_ackno;
 	}
 
 	// in case of an ack-packet,the function is done
@@ -120,12 +119,13 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 	// handle data
 	// check if seqno is in current window range
+    uint32_t pkt_seqno = ntohl(pkt->seqno);
     size_t lower_bound = r->recv_seqno;
     size_t upper_bound = lower_bound + r-> window_size;
-	if (pkt->seqno < lower_bound || pkt->seqno >= upper_bound ) return;
+	if (pkt_seqno < lower_bound || pkt_seqno >= upper_bound ) return;
 
 	// calculate index in window
-	size_t index = pkt->seqno % r->window_size;
+	size_t index = pkt_seqno % r->window_size;
 
 	// ignore duplicated incoming packets
 	if (r->recv_buffer[index].marked) return;
@@ -136,20 +136,17 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	r->recv_buffer[index].marked = 1;
 
 	// initiate data output
-	if (pkt->seqno == r->recv_seqno) rel_output(r);
+	if (pkt_seqno == r->recv_seqno) rel_output(r);
 }
 
 
-void
-rel_read (rel_t *r)
+void rel_read (rel_t *r)
 {
-
+    return;
 }
 
-void
-rel_output (rel_t *r)
+void rel_output (rel_t *r)
 {
-	//TODO endianess
 	while( r->recv_buffer[r->recv_seqno].marked ) {
         slice* s = &(r->recv_buffer[r->recv_seqno % r->window_size]);
         char flag = 0;
@@ -174,20 +171,19 @@ rel_output (rel_t *r)
         }
 
     }
+    //wut
     if (flag) {
         send_ack(r);
     }
 }
 
-void
-rel_timer ()
+void rel_timer ()
 {
     /* Retransmit any packets that need to be retransmitted */
 
 }
 
-void
-send_ack(rel_t *r) {
+void send_ack(rel_t *r) {
     packet_t pkt;
 	pkt.cksum = 0;
 	pkt.len   = htons(8);
