@@ -27,12 +27,12 @@ struct reliable_state {
     conn_t *c;			/* This is the connection object */
 
     /* Add your own data fields below this */
-	size_t window_size;
-	slice* recv_buffer;
-	slice* send_buffer;
-	size_t recv_seqno;
-	size_t send_seqno;
-	size_t already_written;
+    size_t window_size;
+    slice* recv_buffer;
+    slice* send_buffer;
+    size_t recv_seqno;
+    size_t send_seqno;
+    size_t already_written;
 
 };
 rel_t *rel_list;
@@ -43,7 +43,6 @@ rel_t *rel_list;
 rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct config_common *cc)
 {
     rel_t *r;
-
     r = xmalloc (sizeof (*r));
     memset (r, 0, sizeof (*r));
 
@@ -72,7 +71,6 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
 
     r->recv_seqno = 1;
     r->send_seqno = 1;
-
     r->already_written = 0;
 
     return r;
@@ -97,40 +95,40 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     uint16_t pkt_len   = ntohs(pkt->len);
     uint32_t pkt_ackno = ntohl(pkt->ackno);
 
-	if(n < 8) return;
-	if(pkt_len != n ) return;
+    if(n < 8) return;
+    if(pkt_len != n ) return;
 
 	// verify checksum
-	if(cksum(pkt, n) != 0 ) return;
+    if(cksum(pkt, n) != 0 ) return;
 
 	// mark acknowledged packets
-	if (r->send_seqno < pkt_ackno) {
-		for (uint16_t i = r->send_seqno; i < pkt_ackno; i++) {
-			r->send_buffer[i % r->window_size].marked = 0;
-		}
-		r->send_seqno = pkt_ackno;
-	}
+    if (r->send_seqno < pkt_ackno) {
+        for (uint16_t i = r->send_seqno; i < pkt_ackno; i++) {
+            r->send_buffer[i % r->window_size].marked = 0;
+        }
+        r->send_seqno = pkt_ackno;
+    }
 
-	// in case of an ack-packet,the function is done
-	if (n == 8) return;
+    // in case of an ack-packet,the function is done
+    if (n == 8) return;
 
-	// handle data
-	// check if seqno is in current window range
+    // handle data
+    // check if seqno is in current window range
     uint32_t pkt_seqno = ntohl(pkt->seqno);
     size_t lower_bound = r->recv_seqno;
     size_t upper_bound = lower_bound + r-> window_size;
-	if (pkt_seqno < lower_bound || pkt_seqno >= upper_bound ) return;
+    if (pkt_seqno < lower_bound || pkt_seqno >= upper_bound ) return;
 
-	// calculate index in window
-	size_t index = pkt_seqno % r->window_size;
+    // calculate index in window
+    size_t index = pkt_seqno % r->window_size;
 
-	// ignore duplicated incoming packets
-	if (r->recv_buffer[index].marked) return;
+    // ignore duplicated incoming packets
+    if (r->recv_buffer[index].marked) return;
 
-	// store data in window
-	memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
-	r->recv_buffer[index].len    = n - 12;
-	r->recv_buffer[index].marked = 1;
+    // store data in window
+    memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
+    r->recv_buffer[index].len    = n - 12;
+    r->recv_buffer[index].marked = 1;
 
 	// initiate data output
 	if (pkt_seqno == r->recv_seqno) rel_output(r);
@@ -144,13 +142,13 @@ void rel_read (rel_t *r)
 
 void send_ack(rel_t *r) {
     packet_t pkt;
-	pkt.cksum = 0;
-	pkt.len   = htons(8);
-	pkt.ackno = htonl(r->recv_seqno);
+    pkt.cksum = 0;
+    pkt.len   = htons(8);
+    pkt.ackno = htonl(r->recv_seqno);
 
 	// compute checksum
-	pkt.cksum = cksum(&pkt, 8);
-	conn_sendpkt(r->c, &pkt, 8);
+    pkt.cksum = cksum(&pkt, 8);
+    conn_sendpkt(r->c, &pkt, 8);
 }
 
 void rel_output (rel_t *r)
