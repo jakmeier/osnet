@@ -104,11 +104,8 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	if(cksum(pkt, n) != 0 ) return;
 
 	// mark acknowledged packets
-    // ackno is the seqno the reciever is waiting for
-        
 	if (r->send_seqno < pkt_ackno) {
-		uint16_t i;
-		for (i = r->send_seqno; i < pkt_ackno; i++) {
+		for (uint16_t i = r->send_seqno; i < pkt_ackno; i++) {
 			r->send_buffer[i % r->window_size].marked = 0;
 		}
 		r->send_seqno = pkt_ackno;
@@ -142,21 +139,29 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 void rel_read (rel_t *r)
 {
-    return;
+
+}
+
+void send_ack(rel_t *r) {
+    packet_t pkt;
+	pkt.cksum = 0;
+	pkt.len   = htons(8);
+	pkt.ackno = htonl(r->recv_seqno);
+
+	// compute checksum
+	pkt.cksum = cksum(&pkt, 8);
+	conn_sendpkt(r->c, &pkt, 8);
 }
 
 void rel_output (rel_t *r)
 {
-	while( r->recv_buffer[r->recv_seqno].marked ) {
+    char flag = 0;
+    while( r->recv_buffer[r->recv_seqno].marked ) {
         slice* s = &(r->recv_buffer[r->recv_seqno % r->window_size]);
-        char flag = 0;
         size_t written = conn_output(
-                                        // c needs to be of type conn_t *
-                                        // c is currently not declared
-                                        // where do we get it from ?
-                                        c,
+                                        r->c,
                                         &(s->segment) + r->already_written ,
-                                        s->len - r->already_written)
+                                        s->len - r->already_written
                                     );
         if (written == s->len - r->already_written) {
             // full packet written
@@ -171,7 +176,6 @@ void rel_output (rel_t *r)
         }
 
     }
-    //wut
     if (flag) {
         send_ack(r);
     }
@@ -181,15 +185,4 @@ void rel_timer ()
 {
     /* Retransmit any packets that need to be retransmitted */
 
-}
-
-void send_ack(rel_t *r) {
-    packet_t pkt;
-	pkt.cksum = 0;
-	pkt.len   = htons(8);
-	pkt.ackno = htonl(r->recv_seqno);
-
-	// compute checksum
-	pkt.cksum = cksum(&pkt, 8);
-	conn_sendpkt(r->c, &pkt, 8);
 }
