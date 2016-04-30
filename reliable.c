@@ -101,7 +101,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 //TODO network to host endianess
 	// check packet size
 	if(n < 8) return;
-	if(pkt->length != n ) return;
+	if(pkt->len != n ) return;
 
 	// varify checksum
 	if(cksum(pkt, n) != 0 ) return;
@@ -109,7 +109,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// handle acknowledgment
 	if (r->send_seqno < pkt->ackno) {
 		uint16_t i;
-		for (i = send_seqno; i < ackno; i++) {
+		for (i = r->send_seqno; i < pkt->ackno; i++) {
 			r->send_buffer[i % r->window_size].marked = 0;
 		}
 		r->send_seqno = pkt->ackno;
@@ -126,11 +126,11 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	size_t index = pkt->seqno % r->window_size;
 
 	// ignore duplicated incoming packets
-	if (r->recv_buffer[index]->marked) return;
+	if (r->recv_buffer[index].marked) return;
 
 	// store data in window
 	memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n-12);
-	r->recv_buffer[index].length = n -12;
+	r->recv_buffer[index].len    = n -12;
 	r->recv_buffer[index].marked = 1;
 
 	// initiate data output
@@ -152,11 +152,11 @@ rel_output (rel_t *r)
         slice* s = &(r->recv_buffer[r->recv_seqno] % r->window_size);
         char flag = 0;
         size_t written = conn_output(
-												c,
-												&(s->.segment) + r->already_written ,
-												s->length - r->already_written)
+										c,
+										&(s->segment) + r->already_written ,
+										s->len - r->already_written)
                                     );
-        if (written == s->length - r->already_written) {
+        if (written == s->len - r->already_written) {
             // full packet written
             r->recv_seqno++;
             flag = 1;
@@ -182,10 +182,10 @@ rel_timer ()
 }
 
 void
-send_ack(rel_t* r) {
+send_ack(rel_t *r) {
     packet_t pkt;
 	pkt.cksum = 0;
-	pkt.len = htons(8);
+	pkt.len   = htons(8);
 	pkt.ackno = htonl(r->recv_seqno);
 
 	// compute checksum
