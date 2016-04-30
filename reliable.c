@@ -184,5 +184,21 @@ void rel_output (rel_t *r)
 void rel_timer ()
 {
     /* Retransmit any packets that need to be retransmitted */
+    packet_t pkt;
+    slice *send_buffer = rel_list->send_buffer;
+    size_t window_size = rel_list->window_size;
+    size_t upper_bound = rel_list->send_seqno + window_size ;
 
+    for(size_t slice_no = rel_list->recv_seqno; slice_no < upper_bound; slice_no++){
+        slice current_slice = send_buffer[slice_no % window_size];
+
+        if(current_slice.marked == 0){
+            pkt.len   = htons(current_slice.len);
+            pkt.seqno = htonl(slice_no);
+            pkt.ackno = htonl(rel_list->recv_seqno);
+            pkt.cksum = cksum(&pkt, pkt.len);
+
+            conn_sendpkt(rel_list->c, &pkt, pkt.len);
+        }
+    }
 }
