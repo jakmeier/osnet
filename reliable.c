@@ -14,23 +14,6 @@
 
 #include "rlib.h"
 
-struct reliable_state {
-    rel_t *next;			/* Linked list for traversing all connections */
-    rel_t **prev;
-
-    conn_t *c;			/* This is the connection object */
-
-    /* Add your own data fields below this */
-	  size_t	window_size;
-		slice* recv_buffer;
-		slice* send_buffer;
-		size_t recv_seqno;
-		size_t send_seqno;
-		size_t already_written;
-
-};
-rel_t *rel_list;
-
 typedef struct slice {
 		uint16_t len;
 		char marked;
@@ -38,6 +21,22 @@ typedef struct slice {
 } slice;
 
 
+struct reliable_state {
+    rel_t *next;			/* Linked list for traversing all connections */
+    rel_t **prev;
+
+    conn_t *c;			/* This is the connection object */
+
+    /* Add your own data fields below this */
+	size_t	window_size;
+	slice* recv_buffer;
+	slice* send_buffer;
+	size_t recv_seqno;
+	size_t send_seqno;
+	size_t already_written;
+
+};
+rel_t *rel_list;
 
 /* Creates a new reliable protocol session, returns NULL on failure.
 * ss is always NULL */
@@ -66,19 +65,19 @@ const struct config_common *cc)
 
     /* Do any other initialization you need here */
 
-		r->window_size = cc->window;
-		r->recv_buffer = malloc( sizeof(slice) * r->window_size);
-		assert(r->recv_buffer != NULL && "Malloc failed!");
+	r->window_size = cc->window;
+	r->recv_buffer = malloc( sizeof(slice) * r->window_size);
+	assert(r->recv_buffer != NULL && "Malloc failed!");
 
-		r->send_buffer = malloc( sizeof(slice) * r->window_size);
-		assert(r->send_buffer != NULL && "Malloc failed!");
-		
-		r->recv_seqno = 1;
-		r->send_seqno = 1;
-    
+	r->send_buffer = malloc( sizeof(slice) * r->window_size);
+	assert(r->send_buffer != NULL && "Malloc failed!");
+
+	r->recv_seqno = 1;
+	r->send_seqno = 1;
+
     r->already_written = 0;
-    
-		return r;
+
+	return r;
 }
 
 void
@@ -103,7 +102,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// check packet size
 	if(n < 8) return;
 	if(pkt->length != n ) return;
-	
+
 	// varify checksum
 	if(cksum(pkt, n) != 0 ) return;
 
@@ -122,7 +121,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// handle data
 	// check if seqno is in current window range
 	if (pkt->seqno < r->recv_seqno || pkt->seqno >= r->recv_seqno + r->window_size ) return;
-	
+
 	// calculate index in window
 	size_t index = pkt->seqno % r->window_size;
 
@@ -133,8 +132,8 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n-12);
 	r->recv_buffer[index].length = n -12;
 	r->recv_buffer[index].marked = 1;
-	
-	// initiate data output 
+
+	// initiate data output
 	if (pkt->seqno == r->recv_seqno) rel_output(r);
 }
 
@@ -142,7 +141,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 void
 rel_read (rel_t *r)
 {
-	
+
 }
 
 void
@@ -150,29 +149,29 @@ rel_output (rel_t *r)
 {
 	//TODO endianess
 	while( r->recv_buffer[r->recv_seqno].marked ) {
-		slice* s = &(r->recv_buffer[r->recv_seqno] % r->window_size);
-		char flag = 0;
-	  size_t written = conn_output(
-												c, 
+        slice* s = &(r->recv_buffer[r->recv_seqno] % r->window_size);
+        char flag = 0;
+        size_t written = conn_output(
+												c,
 												&(s->.segment) + r->already_written ,
-												s->length - r->already_written) 
-	  									);
-	  if (written == s->length - r->already_written) {
-	  	// full packet written
-	  	r->recv_seqno++;	
-	  	flag = 1;
-	  	r->already_written = 0;
-	  }
-	  else {
-	  	// packet partially written
-	  	r->already_written = written;
-	  	break;
-	  }
-		
-	}
-	if (flag) {
-		send_ack(r);
-	}
+												s->length - r->already_written)
+                                    );
+        if (written == s->length - r->already_written) {
+            // full packet written
+            r->recv_seqno++;
+            flag = 1;
+            r->already_written = 0;
+        }
+        else {
+            // packet partially written
+            r->already_written = written;
+            break;
+        }
+
+    }
+    if (flag) {
+        send_ack(r);
+    }
 }
 
 void
@@ -182,14 +181,13 @@ rel_timer ()
 
 }
 
-void 
+void
 send_ack(rel_t* r) {
-
-	packet_t pkt;
+    packet_t pkt;
 	pkt.cksum = 0;
 	pkt.len = htons(8);
 	pkt.ackno = htonl(r->recv_seqno);
-	
+
 	// compute checksum
 	pkt.cksum = cksum(&pkt, 8);
 	conn_sendpkt(r->c, &pkt, 8);
