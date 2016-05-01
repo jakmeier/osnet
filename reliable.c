@@ -136,7 +136,29 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 void rel_read (rel_t *r)
 {
+    // This is so wrong
+    int16_t recieved_bytes;
+    char buffer[500];
 
+    recieved_bytes = conn_input(r->c, (void *)buffer, 500);
+
+    switch (recieved_bytes){
+        case 0 :
+            // nothing to read
+            return;
+
+        case -1:
+            // EOF
+            break;
+
+        default:
+            //packet and stuff ?
+            break;
+        }
+    }
+
+
+    // EOF or ERROR here something else needs to happen
 }
 
 void send_ack(rel_t *r) {
@@ -185,6 +207,7 @@ void rel_timer ()
     /* Retransmit any packets that need to be retransmitted */
     packet_t pkt;
     slice current_slice;
+
     slice *send_buffer = rel_list->send_buffer;
     size_t window_size = rel_list->window_size;
     size_t upper_bound = rel_list->send_seqno + window_size;
