@@ -14,7 +14,17 @@
 
 #include "rlib.h"
 
-//#define 
+
+#define EOF_RECV(flag)    (flag & 0x01)
+#define EOF_SENT(flag)    (flag & 0x02)
+#define ALL_SENT(flag)    (flag & 0x04)
+#define ALL_WRITTEN(flag) (flag & 0x08)
+
+#define SET_EOF_RECV(flag)    (flag | 0x01)
+#define SET_EOF_SENT(flag)    (flag | 0x02)
+#define SET_ALL_SENT(flag)    (flag | 0x04)
+#define SET_ALL_WRITTEN(flag) (flag | 0x08)
+
 
 typedef struct slice {
     char marked;
@@ -35,7 +45,7 @@ struct reliable_state {
     size_t send_seqno;
     size_t window_size;
     size_t already_written;
-    
+
     char last_marked_already_sent;
     char flags;
 
@@ -74,9 +84,10 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
 
     r->recv_seqno      = 1;
     r->send_seqno      = 1;
+    r->flags           = 0;
     r->already_written = 0;
-		r->last_marked_already_sent = 1;
-		
+    r->last_marked_already_sent = 1;
+
     return r;
 }
 
@@ -131,9 +142,15 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     if (r->recv_buffer[index].marked) return;
 
     // store data in window
-    memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
-    r->recv_buffer[index].len    = n - 12;
-    r->recv_buffer[index].marked = 1;
+    // might want to check this out. Could be wrong in a horrible way.
+    if( pkt_len == 12 ){
+        SET_EOF_RECV(r->flags);
+    }
+    else{
+        memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
+        r->recv_buffer[index].len    = n - 12;
+        r->recv_buffer[index].marked = 1;
+    }
 
     // initiate data output
     if (pkt_seqno == r->recv_seqno) rel_output(r);
@@ -141,30 +158,35 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 
 void rel_read (rel_t *r)
-{    
-    size_t upper_bound = r->send_seqno + r->window_size;
-    size_t first_unmarked = r->send_seqno;
-    while ( first_unmarked < upper_bound ) {
-    	if ( r->send_buffer[first_unmarked % r->window_size].marked ) {
-    		first_unmarked++;
-    	}
-    	else { break; }
-    }
-    
-    // no space available
-    if (r->send_buffer[first_unmarked % r->window_size].marked) return;
-    slice* fill_me_up;
+{
+    slice*   fill_me_up;
+    char     buffer[500];
+    int16_t  recieved_bytes;
     uint16_t available_space;
-		if ( r->last_marked_already_sent ) {
+
+    size_t upper_bound    = r->send_seqno + r->window_size;
+    size_t first_unmarked = r->send_seqno;
+
+    while ( first_unmarked < upper_bound ) {
+        if ( r->send_buffer[first_unmarked % r->window_size].marked ) {
+            first_unmarked++;
+        }
+        else {
+            break;
+        }
+    }
+
+    // no space available
+    if ( r->send_buffer[first_unmarked % r->window_size].marked ) return;
+
+    if ( r->last_marked_already_sent ) {
 			fill_me_up = &(r->send_buffer[first_unmarked % r->window_size]);
 			available_space = 500;
-		}
-		else {
+	}
+	else {
 			fill_me_up = &(r->send_buffer[(first_unmarked - 1 + r->window_size) % r->window_size]);
 			available_space = 500 - fill_me_up->len;
-		}
-		
-    uint16_t recieved_bytes;
+	}
 
     recieved_bytes = conn_input(r->c, (void *)buffer, available_space);
 
@@ -175,20 +197,18 @@ void rel_read (rel_t *r)
 
         case -1:
             // EOF
+            SET_EOF_RECV(r->flags);
             break;
 
         default:
             //packet and stuff ?
             break;
-        }
     }
-
-
-    // EOF or ERROR here something else needs to happen
 }
 
 void send_ack(rel_t *r) {
-    ack_packet pkt;
+    struct ack_packet pkt;
+
     pkt.cksum = 0;
     pkt.len   = htons(8);
     pkt.ackno = htonl(r->recv_seqno);
@@ -212,8 +232,8 @@ void rel_output (rel_t *r)
         if (written == s->len - r->already_written) {
             // full packet written
             r->recv_seqno++;
-            flag = 1;
             r->already_written = 0;
+            flag = 1;
         }
         else {
             // packet partially written
@@ -234,6 +254,7 @@ void rel_timer ()
     packet_t pkt;
     slice current_slice;
 
+    int all_ackwoledged = 1;
     slice *send_buffer = rel_list->send_buffer;
     size_t window_size = rel_list->window_size;
     size_t upper_bound = rel_list->send_seqno + window_size;
@@ -244,7 +265,7 @@ void rel_timer ()
 
         // if packet is unackwnoledged
         if(current_slice.marked == 0){
-        		
+
             pkt.len   = htons(current_slice.len);
             pkt.seqno = htonl(slice_no);
             pkt.ackno = htonl(rel_list->recv_seqno);
@@ -252,6 +273,12 @@ void rel_timer ()
             pkt.cksum = cksum(&pkt, pkt.len);
 
             conn_sendpkt(rel_list->c, &pkt, pkt.len);
+            all_ackwoledged = 0;
         }
+    }
+
+    // Set correct flag if all packets where correctly recieved on the other side
+    if( all_ackwoledged && EOF_SENT(rel_list->flags) ){
+        SET_ALL_SENT(rel_list->flags);
     }
 }
