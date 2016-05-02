@@ -14,6 +14,8 @@
 
 #include "rlib.h"
 
+//#define 
+
 typedef struct slice {
     char marked;
     char segment[500];
@@ -33,6 +35,9 @@ struct reliable_state {
     size_t send_seqno;
     size_t window_size;
     size_t already_written;
+    
+    char last_marked_already_sent;
+    char flags;
 
 };
 rel_t *rel_list;
@@ -70,7 +75,8 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
     r->recv_seqno      = 1;
     r->send_seqno      = 1;
     r->already_written = 0;
-
+		r->last_marked_already_sent = 1;
+		
     return r;
 }
 
@@ -135,12 +141,32 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 
 void rel_read (rel_t *r)
-{
-    // This is so wrong
-    int16_t recieved_bytes;
-    char buffer[500];
+{    
+    size_t upper_bound = r->send_seqno + r->window_size;
+    size_t first_unmarked = r->send_seqno;
+    while ( first_unmarked < upper_bound ) {
+    	if ( r->send_buffer[first_unmarked % r->window_size].marked ) {
+    		first_unmarked++;
+    	}
+    	else { break; }
+    }
+    
+    // no space available
+    if (r->send_buffer[first_unmarked % r->window_size].marked) return;
+    slice* fill_me_up;
+    uint16_t available_space;
+		if ( r->last_marked_already_sent ) {
+			fill_me_up = &(r->send_buffer[first_unmarked % r->window_size]);
+			available_space = 500;
+		}
+		else {
+			fill_me_up = &(r->send_buffer[(first_unmarked - 1 + r->window_size) % r->window_size]);
+			available_space = 500 - fill_me_up->len;
+		}
+		
+    uint16_t recieved_bytes;
 
-    recieved_bytes = conn_input(r->c, (void *)buffer, 500);
+    recieved_bytes = conn_input(r->c, (void *)buffer, available_space);
 
     switch (recieved_bytes){
         case 0 :
@@ -162,14 +188,14 @@ void rel_read (rel_t *r)
 }
 
 void send_ack(rel_t *r) {
-    packet_t pkt;
+    ack_packet pkt;
     pkt.cksum = 0;
     pkt.len   = htons(8);
     pkt.ackno = htonl(r->recv_seqno);
 
     // compute checksum
     pkt.cksum = cksum(&pkt, 8);
-    conn_sendpkt(r->c, &pkt, 8);
+    conn_sendpkt(r->c, (packet_t*) &pkt, 8);
 }
 
 void rel_output (rel_t *r)
@@ -218,9 +244,11 @@ void rel_timer ()
 
         // if packet is unackwnoledged
         if(current_slice.marked == 0){
+        		
             pkt.len   = htons(current_slice.len);
             pkt.seqno = htonl(slice_no);
             pkt.ackno = htonl(rel_list->recv_seqno);
+            memcpy( &current_slice.segment, &pkt.data, current_slice.len);
             pkt.cksum = cksum(&pkt, pkt.len);
 
             conn_sendpkt(rel_list->c, &pkt, pkt.len);
