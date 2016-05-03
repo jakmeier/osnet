@@ -190,7 +190,7 @@ void rel_read (rel_t *r)
 				available_space = 500 - fill_me_up->len;
     }
 
-    char* begin_writing = &(fill_me_up->segment) + r->already_written;
+    char* begin_writing = (char*) &(fill_me_up->segment) + r->already_written;
     recieved_bytes = conn_input(r->c, (void *)begin_writing, available_space);
 
     // nothing to read
