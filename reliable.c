@@ -19,21 +19,21 @@
 #define EOF_READ(flag)    (flag & 0x02)
 #define ALL_SENT(flag)    (flag & 0x04)
 #define ALL_WRITTEN(flag) (flag & 0x08)
-#define LAST_MARKED_ALLREADY_SENT(flag) (flag & 0x10)
+#define LAST_ALLOCATED_ALLREADY_SENT(flag) (flag & 0x10)
 #define SMALL_PACKET_ONLINE(flag) (flag & 0x20)
 
 #define SET_EOF_READ(flag)    (flag = flag | 0x01)
 #define SET_EOF_SENT(flag)    (flag = flag | 0x02)
 #define SET_ALL_SENT(flag)    (flag = flag | 0x04)
 #define SET_ALL_WRITTEN(flag) (flag = flag | 0x08)
-#define SET_LAST_MARKED_ALLREADY_SENT(flag) (flag = flag | 0x10)
+#define SET_LAST_ALLOCATED_ALLREADY_SENT(flag) (flag = flag | 0x10)
 #define SET_SMALL_PACKET_ONLINE(flag) (flag = flag | 0x20)
 
-#define UNSET_LAST_MARKED_ALLREADY_SENT(flag) (flag = flag & ~0x10)
+#define UNSET_LAST_ALLOCATED_ALLREADY_SENT(flag) (flag = flag & ~0x10)
 #define UNSET_SMALL_PACKET_ONLINE(flag) (flag = flag & ~0x20)
 
 typedef struct slice {
-    char marked;
+    char allocated;
     char segment[500];
     uint16_t len;
 } slice;
@@ -91,7 +91,7 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
     r->send_seqno      = 1;
     r->flags           = 0;
     r->already_written = 0;
-    r->last_marked_already_sent = 1;
+    SET_LAST_ALREADY_SENT(r->flags);
 
     return r;
 }
@@ -125,7 +125,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     // mark acknowledged packets
     if (r->send_seqno < pkt_ackno) {
         for (uint16_t i = r->send_seqno; i < pkt_ackno; i++) {
-            r->send_buffer[i % r->window_size].marked = 0;
+            r->send_buffer[i % r->window_size].allocated = 0;
         }
         r->send_seqno = pkt_ackno;
     }
@@ -144,7 +144,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     size_t index = pkt_seqno % r->window_size;
 
     // ignore duplicated incoming packets
-    if (r->recv_buffer[index].marked) return;
+    if (r->recv_buffer[index].allocated) return;
 
     // store data in window
     // might want to check this out. Could be wrong in a horrible way.
@@ -154,7 +154,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     else{
         memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
         r->recv_buffer[index].len    = n - 12;
-        r->recv_buffer[index].marked = 1;
+        r->recv_buffer[index].allocated = 1;
     }
 
     // initiate data output
@@ -169,11 +169,11 @@ void rel_read (rel_t *r)
     uint16_t available_space;
 
     size_t upper_bound    = r->send_seqno + r->window_size;
-    size_t first_unmarked = r->send_seqno;
+    size_t first_free = r->send_seqno;
 
-    while ( first_unmarked < upper_bound ) {
-        if ( r->send_buffer[first_unmarked % r->window_size].marked ) {
-            first_unmarked++;
+    while ( first_free < upper_bound ) {
+        if ( r->send_buffer[first_free % r->window_size].allocated ) {
+            first_free++;
         }
         else {
             break;
@@ -181,14 +181,14 @@ void rel_read (rel_t *r)
     }
 
     // no space available
-    if ( r->send_buffer[first_unmarked % r->window_size].marked ) return;
+    if ( r->send_buffer[first_free % r->window_size].allocated ) return;
 
-    if ( r->last_marked_already_sent ) {
-		fill_me_up = &(r->send_buffer[first_unmarked % r->window_size]);
+    if ( LAST_ALLOCATED_ALREADY_SENT(r->flags) ) {
+		fill_me_up = &(r->send_buffer[first_free % r->window_size]);
 		available_space = 500;
     }
     else {
-        fill_me_up = &(r->send_buffer[(first_unmarked - 1 + r->window_size) % r->window_size]);
+        fill_me_up = &(r->send_buffer[(first_free - 1 + r->window_size) % r->window_size]);
 				available_space = 500 - fill_me_up->len;
     }
     
@@ -203,16 +203,16 @@ void rel_read (rel_t *r)
     }
 
     //packet and stuff 
-    fill_me_up->marked = 1;
+    fill_me_up->allocated = 1;
     fill_me_up->len += recieved_bytes;
     if fill_me_up->len == 500 || !SMALL_PACKET_ONLINE(r->flags) {
         // packet can be sent now
-        SET_LAST_MARKED_ALREADY_SENT(r->flags);
+        SET_LAST_ALLOCATED_ALREADY_SENT(r->flags);
         
     }
     else {
         // Keep packet here and maybe fill it up later
-        UNSET_LAST_MARKED_ALREADY_SENT(r->flags);
+        UNSET_LAST_ALLOCATED_ALREADY_SENT(r->flags);
     }
 }
 
@@ -244,7 +244,7 @@ void send_packet(rel_t *r, uint32_t seqno) {
 void rel_output (rel_t *r)
 {
     char flag = 0;
-    while( r->recv_buffer[r->recv_seqno].marked ) {
+    while( r->recv_buffer[r->recv_seqno].allocated ) {
         slice* s = &(r->recv_buffer[r->recv_seqno % r->window_size]);
         size_t written = conn_output(
                                         r->c,
@@ -286,7 +286,7 @@ void rel_timer ()
         current_slice = send_buffer[slice_no % window_size];
 
         // if packet is unackwnoledged
-        if(current_slice.marked == 0){
+        if(!current_slice.allocated){
 
             send_packet(rel_list, slice_no);
             all_ackwoledged = 0;
