@@ -156,7 +156,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     if( pkt_len == 12 ){
         SET_EOF_RECV(r->flags);
     }
-    
+
     memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
     r->recv_buffer[index].len    = n - 12;
     r->recv_buffer[index].allocated = 1;
@@ -197,7 +197,7 @@ void rel_read (rel_t *r)
 
     fill_me_up = &(r->send_buffer[newest_seqno % r->window_size]);
     available_space = 500 - fill_me_up->len;
-    
+
     char* begin_writing = (char*) &(fill_me_up->segment) + r->already_written;
     recieved_bytes = conn_input(r->c, (void *)begin_writing, available_space);
 
@@ -279,7 +279,7 @@ void rel_output (rel_t *r)
     if (ack_afterwards) {
         send_ack(r);
     }
-    
+
     if ( EOF_RECV(r->flags) ) {
         char buffer_empty = 1;
         for (size_t i = 0; i < r->window_size; i++) {
@@ -292,7 +292,7 @@ void rel_output (rel_t *r)
             SET_ALL_WRITTEN(r->flags);
         }
     }
-    
+
 }
 
 void rel_timer ()
@@ -320,13 +320,12 @@ void rel_timer ()
     if(EOF_READ(rel_list->flags) &&  all_ackwoledged){
         SET_ALL_SENT_ACKNOWLEDGED(rel_list->flags);
     }
-    
+
     if (EOF_RECV(rel_list->flags) &&
         EOF_READ(rel_list->flags) &&
         ALL_SENT_ACKNOWLEDGED(rel_list->flags) &&
         ALL_WRITTEN(rel_list->flags)
-    ) 
-    {
+    ){
         rel_destroy(rel_list);
     }
 }
