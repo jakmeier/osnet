@@ -296,6 +296,8 @@ void rel_output (rel_t *r)
 
 void rel_timer ()
 {
+    rel_read(rel_list);
+    
     /* Retransmit any packets that need to be retransmitted */
     slice* current_slice;
 
