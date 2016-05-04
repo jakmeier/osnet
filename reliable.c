@@ -15,22 +15,22 @@
 #include "rlib.h"
 
 
-#define EOF_RECV(flag)    (flag & 0x01)
-#define EOF_READ(flag)    (flag & 0x02)
-#define ALL_SENT_ACKNOWLEDGED(flag)    (flag & 0x04)
-#define ALL_WRITTEN(flag) (flag & 0x08)
-#define LAST_ALLOCATED_ALREADY_SENT(flag) (flag & 0x10)
-#define SMALL_PACKET_ONLINE(flag) (flag & 0x20)
+#define EOF_RECV(flag)                      (flag & 0x01)
+#define EOF_READ(flag)                      (flag & 0x02)
+#define ALL_SENT_ACKNOWLEDGED(flag)         (flag & 0x04)
+#define ALL_WRITTEN(flag)                   (flag & 0x08)
+#define LAST_ALLOCATED_ALREADY_SENT(flag)   (flag & 0x10)
+#define SMALL_PACKET_ONLINE(flag)           (flag & 0x20)
 
-#define SET_EOF_RECV(flag)    (flag = flag | 0x01)
-#define SET_EOF_READ(flag)    (flag = flag | 0x02)
-#define SET_ALL_SENT_ACKNOWLEDGED(flag)    (flag = flag | 0x04)
-#define SET_ALL_WRITTEN(flag) (flag = flag | 0x08)
-#define SET_LAST_ALLOCATED_ALREADY_SENT(flag) (flag = flag | 0x10)
-#define SET_SMALL_PACKET_ONLINE(flag) (flag = flag | 0x20)
+#define SET_EOF_RECV(flag)                      (flag = flag | 0x01)
+#define SET_EOF_READ(flag)                      (flag = flag | 0x02)
+#define SET_ALL_SENT_ACKNOWLEDGED(flag)         (flag = flag | 0x04)
+#define SET_ALL_WRITTEN(flag)                   (flag = flag | 0x08)
+#define SET_LAST_ALLOCATED_ALREADY_SENT(flag)   (flag = flag | 0x10)
+#define SET_SMALL_PACKET_ONLINE(flag)           (flag = flag | 0x20)
 
 #define UNSET_LAST_ALLOCATED_ALREADY_SENT(flag) (flag = flag & ~0x10)
-#define UNSET_SMALL_PACKET_ONLINE(flag) (flag = flag & ~0x20)
+#define UNSET_SMALL_PACKET_ONLINE(flag)         (flag = flag & ~0x20)
 
 void send_packet(rel_t*, uint32_t);
 
@@ -172,8 +172,8 @@ void rel_read (rel_t *r)
     int16_t  recieved_bytes;
     uint16_t available_space;
 
-    size_t upper_bound    = r->send_seqno + r->window_size;
-    size_t first_free = r->send_seqno;
+    size_t upper_bound = r->send_seqno + r->window_size;
+    size_t first_free  = r->send_seqno;
     size_t newest_seqno;
 
     while ( first_free < upper_bound ) {
@@ -194,6 +194,7 @@ void rel_read (rel_t *r)
     else {
         newest_seqno = first_free -1;
     }
+
     fill_me_up = &(r->send_buffer[newest_seqno % r->window_size]);
     available_space = 500 - fill_me_up->len;
     
@@ -263,9 +264,9 @@ void rel_output (rel_t *r)
         if (written == s->len - r->already_written) {
             // full packet written
             s->allocated = 0;
-            r->recv_seqno++;
             r->already_written = 0;
             ack_afterwards = 1;
+            r->recv_seqno++;
         }
         else {
             // packet partially written
