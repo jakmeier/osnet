@@ -41,10 +41,10 @@ typedef struct slice {
 } slice;
 
 struct reliable_state {
-    rel_t *next;			/* Linked list for traversing all connections */
+    rel_t *next;        /* Linked list for traversing all connections */
     rel_t **prev;
 
-    conn_t *c;			/* This is the connection object */
+    conn_t *c;          /* This is the connection object */
 
     slice* recv_buffer;
     slice* send_buffer;
