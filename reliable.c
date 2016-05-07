@@ -124,6 +124,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     uint16_t pkt_cksum = pkt->cksum;
 
     // check size of packet
+    fprintf(stderr, "RECV ackno:%u len:%u cksum:%u\n", pkt_ackno, pkt_len, pkt_cksum);
     if(n < 8) return;
 
     // set pkt checksum to zero so that we can compute it again.
@@ -165,7 +166,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         SET_EOF_RECV(r->flags);
     }
 
-    memcpy( &(r->recv_buffer[index].segment), &(pkt->data), pkt_len - 12);
+    memcpy(r->recv_buffer[index].segment, pkt->data, pkt_len - 12);
     r->recv_buffer[index].len       = pkt_len - 12;
     r->recv_buffer[index].allocated = 1;
 
@@ -224,7 +225,6 @@ void rel_read (rel_t *r)
 
     // Send if it's possible.
     if (fill_me_up->len == 500 || (!SMALL_PACKET_ONLINE(r->flags) && fill_me_up->len != 0)) {
-        // packet can be sent now
         SET_LAST_ALLOCATED_ALREADY_SENT(r->flags);
         send_packet(r, newest_seqno);
     }
@@ -243,6 +243,8 @@ void send_ack(rel_t *r) {
 
     // compute checksum
     pkt.cksum = cksum(&pkt, 8);
+    fprintf(stderr, "SEND ACK: len:8 ackno:%lu cksum:%u\n",
+            r->recv_seqno, pkt.cksum);
     conn_sendpkt(r->c, (packet_t*) &pkt, 8);
 }
 
@@ -256,7 +258,8 @@ void send_packet(rel_t *r, uint32_t seq_no) {
     memcpy(pkt.data, s->segment, s->len);
     pkt.cksum = cksum(&pkt, 512);
 
-    fprintf(stderr, "SEND: len:%u ackno:%u seqno:%lu segment:%s \n", s->len, seq_no, r->recv_seqno,pkt.data);
+    fprintf(stderr, "SEND PKT: len:%u seqno:%u ackno:%lu segment:%s cksum:%u\n",
+            s->len, seq_no, r->recv_seqno, pkt.data, pkt.cksum);
     conn_sendpkt(r->c, &pkt, pkt.len);
 }
 
@@ -266,16 +269,15 @@ void rel_output (rel_t *r)
 
     while( r->recv_buffer[r->recv_seqno].allocated ) {
         slice* s = &(r->recv_buffer[r->recv_seqno % r->window_size]);
-        fprintf(stderr, "s->len:%u already_written:%lu\n", s->len, r->already_written);
         size_t written = conn_output(
                                         r->c,
                                         &(s->segment) + r->already_written ,
                                         s->len - r->already_written
                                     );
 
+        fprintf(stderr, "written:%lu len:%u alwritten:%lu\n", written, s->len, r->already_written);
         if (written == s->len - r->already_written) {
             // full packet written
-            fprintf(stderr, "\nTest\n");
             s->allocated       = 0;
             r->already_written = 0;
             ack_afterwards     = 1;
