@@ -119,8 +119,12 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     // check size of packet
     if(n < 8 || pkt_len != n) return;
 
+    fprintf(stderr, "!!!!!!!!!!!!!!!!!!! pkt_len passt\n");
+
     // verify checksum
     if(cksum(pkt, n) != 0) return;
+
+    fprintf(stderr, "len:%u ackno:%u\n", pkt_len, pkt_ackno);
 
     // mark acknowledged packets
     if (r->send_seqno < pkt_ackno) {
@@ -214,9 +218,10 @@ void rel_read (rel_t *r)
     fill_me_up->len += recieved_bytes;
 
     // Send if it's possible.
-    if (fill_me_up->len == 500 || !SMALL_PACKET_ONLINE(r->flags)) {
+    if (fill_me_up->len == 500 || (!SMALL_PACKET_ONLINE(r->flags) && fill_me_up->len != 0)) {
         // packet can be sent now
         SET_LAST_ALLOCATED_ALREADY_SENT(r->flags);
+        fprintf(stderr, "len:%u\n", fill_me_up->len);
         send_packet(r, newest_seqno);
     }
     else {
