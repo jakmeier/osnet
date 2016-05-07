@@ -83,10 +83,10 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
     rel_list = r;
 
     r->window_size = cc->window;
-    r->recv_buffer = malloc( sizeof(slice) * r->window_size);
+    r->recv_buffer = calloc( sizeof(slice), r->window_size);
     assert(r->recv_buffer != NULL && "Malloc failed!");
 
-    r->send_buffer = malloc( sizeof(slice) * r->window_size);
+    r->send_buffer = calloc( sizeof(slice), r->window_size);
     assert(r->send_buffer != NULL && "Malloc failed!");
 
     r->recv_seqno      = 1;
@@ -221,7 +221,6 @@ void rel_read (rel_t *r)
     if (fill_me_up->len == 500 || (!SMALL_PACKET_ONLINE(r->flags) && fill_me_up->len != 0)) {
         // packet can be sent now
         SET_LAST_ALLOCATED_ALREADY_SENT(r->flags);
-        fprintf(stderr, "len:%u\n", fill_me_up->len);
         send_packet(r, newest_seqno);
     }
     else {
