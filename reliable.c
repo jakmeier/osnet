@@ -83,10 +83,13 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
     rel_list = r;
 
     r->window_size = cc->window;
-    r->recv_buffer = calloc( sizeof(slice), r->window_size);
+
+    // Just pray that everything is zeroed
+    r->recv_buffer = malloc( sizeof(slice)* r->window_size);
     assert(r->recv_buffer != NULL && "Malloc failed!");
 
-    r->send_buffer = calloc( sizeof(slice), r->window_size);
+    // Just pray another time that everything is zeroed
+    r->send_buffer = malloc( sizeof(slice)* r->window_size);
     assert(r->send_buffer != NULL && "Malloc failed!");
 
     r->recv_seqno      = 1;
@@ -94,6 +97,7 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
     r->flags           = 0;
     r->already_written = 0;
     SET_LAST_ALLOCATED_ALREADY_SENT(r->flags);
+
     return r;
 }
 
@@ -112,19 +116,21 @@ void rel_destroy (rel_t *r)
 
 void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+    // n is equal to the whole packet size: 512/8
+
     // network to host endianess
     uint16_t pkt_len   = ntohs(pkt->len);
     uint32_t pkt_ackno = ntohl(pkt->ackno);
+    uint16_t pkt_cksum = pkt->cksum;
 
     // check size of packet
-    if(n < 8 || pkt_len != n) return;
+    if(n < 8) return;
 
-    fprintf(stderr, "!!!!!!!!!!!!!!!!!!! pkt_len passt\n");
+    // set pkt checksum to zero so that we can compute it again.
+    pkt->cksum = 0;
 
     // verify checksum
-    if(cksum(pkt, n) != 0) return;
-
-    fprintf(stderr, "len:%u ackno:%u\n", pkt_len, pkt_ackno);
+    if(cksum(pkt, n) != pkt_cksum) return;
 
     // mark acknowledged packets
     if (r->send_seqno < pkt_ackno) {
@@ -161,7 +167,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
 
     memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
-    r->recv_buffer[index].len    = n - 12;
+    r->recv_buffer[index].len       = n - 12;
     r->recv_buffer[index].allocated = 1;
 
     // initiate data output
@@ -245,12 +251,13 @@ void send_packet(rel_t *r, uint32_t seq_no) {
     packet_t pkt;
     slice *s = &(r->send_buffer[seq_no % r->window_size]);
 
-    pkt.len   = htons(s->len);
+    pkt.len   = htons(s->len + 12);
     pkt.seqno = htonl(seq_no);
     pkt.ackno = htonl(r->recv_seqno);
     memcpy( &(s->segment), &(pkt.data), s->len);
-    pkt.cksum = cksum(&pkt, pkt.len);
+    pkt.cksum = cksum(&pkt, 512);
 
+    fprintf(stderr, "SEND: len:%u ackno:%u seqno:%lu cksum:%u\n", s->len, seq_no, r->recv_seqno, pkt.cksum);
     conn_sendpkt(r->c, &pkt, pkt.len);
 }
 
@@ -267,9 +274,10 @@ void rel_output (rel_t *r)
 
         if (written == s->len - r->already_written) {
             // full packet written
-            s->allocated = 0;
+            fprintf(stderr, "Test");
+            s->allocated       = 0;
             r->already_written = 0;
-            ack_afterwards = 1;
+            ack_afterwards     = 1;
             r->recv_seqno++;
         }
         else {
@@ -314,7 +322,7 @@ void rel_timer ()
         current_slice = &send_buffer[slice_no % window_size];
 
         // if packet is unackwnoledged
-        if(!current_slice->allocated){
+        if(!current_slice->allocated && current_slice->len != 0){
             send_packet(rel_list, slice_no);
             all_ackwoledged = 0;
         }
