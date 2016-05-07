@@ -148,7 +148,6 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     // in case of an ack-packet,the function is done
     if (n == 8) return;
 
-    // handle data
     // check if seqno is in current window range
     uint32_t pkt_seqno = ntohl(pkt->seqno);
     size_t lower_bound = r->recv_seqno;
@@ -166,8 +165,8 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         SET_EOF_RECV(r->flags);
     }
 
-    memcpy( &(r->recv_buffer[index].segment), &(pkt->data), n - 12);
-    r->recv_buffer[index].len       = n - 12;
+    memcpy( &(r->recv_buffer[index].segment), &(pkt->data), pkt_len - 12);
+    r->recv_buffer[index].len       = pkt_len - 12;
     r->recv_buffer[index].allocated = 1;
 
     // initiate data output
@@ -254,18 +253,20 @@ void send_packet(rel_t *r, uint32_t seq_no) {
     pkt.len   = htons(s->len + 12);
     pkt.seqno = htonl(seq_no);
     pkt.ackno = htonl(r->recv_seqno);
-    memcpy( &(s->segment), &(pkt.data), s->len);
+    memcpy(pkt.data, s->segment, s->len);
     pkt.cksum = cksum(&pkt, 512);
 
-    fprintf(stderr, "SEND: len:%u ackno:%u seqno:%lu cksum:%u\n", s->len, seq_no, r->recv_seqno, pkt.cksum);
+    fprintf(stderr, "SEND: len:%u ackno:%u seqno:%lu segment:%s \n", s->len, seq_no, r->recv_seqno,pkt.data);
     conn_sendpkt(r->c, &pkt, pkt.len);
 }
 
 void rel_output (rel_t *r)
 {
     char ack_afterwards = 0;
+
     while( r->recv_buffer[r->recv_seqno].allocated ) {
         slice* s = &(r->recv_buffer[r->recv_seqno % r->window_size]);
+        fprintf(stderr, "s->len:%u already_written:%lu\n", s->len, r->already_written);
         size_t written = conn_output(
                                         r->c,
                                         &(s->segment) + r->already_written ,
@@ -274,7 +275,7 @@ void rel_output (rel_t *r)
 
         if (written == s->len - r->already_written) {
             // full packet written
-            fprintf(stderr, "Test");
+            fprintf(stderr, "\nTest\n");
             s->allocated       = 0;
             r->already_written = 0;
             ack_afterwards     = 1;
