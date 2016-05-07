@@ -22,7 +22,7 @@
 
 3. **recvseqno** && **sendseqno**
 
-    Gives us the lower bound of our window. Up until this Sequence Number everything has been sent/recieved.
+    Gives us the lower bound of our window. Up until this seqno everything has been sent/recieved.
 
 
 **slice**
@@ -33,5 +33,8 @@
 
 2. **len**
 
-    gives us the number of written bytes in the segment
+    gives us the number of written bytes in the segment. Might get changed by rel_read if the slice is in the send-buffer.
 
+3. **segment**
+
+    Payload which was/will be in the packet. Might be written continously by rel_read over several calls.

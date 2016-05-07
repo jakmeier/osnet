@@ -117,11 +117,10 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     uint32_t pkt_ackno = ntohl(pkt->ackno);
 
     // check size of packet
-    if(n < 8) return;
-    if(pkt_len != n ) return;
+    if(n < 8 || pkt_len != n) return;
 
     // verify checksum
-    if(cksum(pkt, n) != 0 ) return;
+    if(cksum(pkt, n) != 0) return;
 
     // mark acknowledged packets
     if (r->send_seqno < pkt_ackno) {
@@ -169,7 +168,6 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 void rel_read (rel_t *r)
 {
     slice*   fill_me_up;
-    int16_t  recieved_bytes;
     uint16_t available_space;
 
     size_t upper_bound = r->send_seqno + r->window_size;
@@ -188,6 +186,7 @@ void rel_read (rel_t *r)
     // no space available
     if ( r->send_buffer[first_free % r->window_size].allocated ) return;
 
+    // find packet that  we can fill up with new bytes
     if ( LAST_ALLOCATED_ALREADY_SENT(r->flags) ) {
         newest_seqno = first_free;
     }
@@ -199,21 +198,22 @@ void rel_read (rel_t *r)
     available_space = 500 - fill_me_up->len;
 
     char* begin_writing = (char*) &(fill_me_up->segment) + r->already_written;
-    recieved_bytes = conn_input(r->c, (void *)begin_writing, available_space);
+    int16_t recieved_bytes = conn_input(r->c, (void *)begin_writing, available_space);
 
     // nothing to read
     if (recieved_bytes == 0) return;
 
-    // EOF
+    // EOF: Set flag.
     if (recieved_bytes == -1) {
         SET_EOF_READ(r->flags);
         return;
     }
 
-    //packet and stuff
+    // Set correct slice-parameters
     fill_me_up->allocated = 1;
     fill_me_up->len += recieved_bytes;
 
+    // Send if it's possible.
     if (fill_me_up->len == 500 || !SMALL_PACKET_ONLINE(r->flags)) {
         // packet can be sent now
         SET_LAST_ALLOCATED_ALREADY_SENT(r->flags);
@@ -273,7 +273,6 @@ void rel_output (rel_t *r)
             r->already_written += written;
             break;
         }
-
     }
 
     if (ack_afterwards) {
@@ -292,13 +291,12 @@ void rel_output (rel_t *r)
             SET_ALL_WRITTEN(r->flags);
         }
     }
-
 }
 
 void rel_timer ()
 {
     rel_read(rel_list);
-    
+
     /* Retransmit any packets that need to be retransmitted */
     slice* current_slice;
 
@@ -323,6 +321,7 @@ void rel_timer ()
         SET_ALL_SENT_ACKNOWLEDGED(rel_list->flags);
     }
 
+    // Call rel_destroy if session ended.
     if (EOF_RECV(rel_list->flags) &&
         EOF_READ(rel_list->flags) &&
         ALL_SENT_ACKNOWLEDGED(rel_list->flags) &&
