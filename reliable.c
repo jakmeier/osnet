@@ -121,15 +121,17 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     uint32_t pkt_ackno = ntohl(pkt->ackno);
     uint16_t pkt_cksum = pkt->cksum;
 
+    //fprintf(stderr, "RECV ackno:%u len:%u cksum:%u n:%lu\n", pkt_ackno, pkt_len, pkt_cksum, n);
+
     // check size of packet
-    if(n < 8) return;
+    if( n != 8 && n != 512) return;
 
     // set pkt checksum to zero so that we can compute it again.
     pkt->cksum = 0;
 
     // verify checksum
     if(cksum(pkt, n) != pkt_cksum) return;
-    
+
     // mark acknowledged packets
     if (r->send_seqno < pkt_ackno) {
         for (uint16_t i = r->send_seqno; i < pkt_ackno; i++) {
@@ -212,6 +214,7 @@ void rel_read (rel_t *r)
     // nothing to read
     if (recieved_bytes == 0) return;
 
+
     // EOF: Set flag.
     if (recieved_bytes == -1) {
         SET_EOF_READ(r->flags);
@@ -256,7 +259,9 @@ void send_packet(rel_t *r, uint32_t seq_no) {
     memcpy(pkt.data, s->segment, s->len);
     pkt.cksum = cksum(&pkt, 512);
 
-    conn_sendpkt(r->c, &pkt, pkt.len);
+    //fprintf(stderr, "SEND PKT: len:%u seqno:%u ackno:%lu segment:%s cksum:%u\n", s->len, seq_no, r->recv_seqno, pkt.data, pkt.cksum);
+
+    conn_sendpkt(r->c, &pkt, 512);
 }
 
 void rel_output (rel_t *r)
@@ -280,6 +285,7 @@ void rel_output (rel_t *r)
         }
         else {
             // packet partially written
+            fprintf(stderr, "Partly Written");
             r->already_written += written;
             break;
         }
@@ -305,7 +311,7 @@ void rel_output (rel_t *r)
 
 void rel_timer ()
 {
-    rel_read(rel_list);
+    //rel_read(rel_list);
 
     /* Retransmit any packets that need to be retransmitted */
     slice* current_slice;
@@ -320,7 +326,7 @@ void rel_timer ()
         current_slice = &send_buffer[slice_no % window_size];
 
         // if packet is unackwnoledged
-        if(!current_slice->allocated && current_slice->len != 0){
+        if(current_slice->allocated && current_slice->len != 0){
             send_packet(rel_list, slice_no);
             all_ackwoledged = 0;
         }
