@@ -84,12 +84,10 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
 
     r->window_size = cc->window;
 
-    // Just pray that everything is zeroed
-    r->recv_buffer = malloc( sizeof(slice)* r->window_size);
+    r->recv_buffer = calloc( sizeof(slice), r->window_size);
     assert(r->recv_buffer != NULL && "Malloc failed!");
 
-    // Just pray another time that everything is zeroed
-    r->send_buffer = malloc( sizeof(slice)* r->window_size);
+    r->send_buffer = calloc( sizeof(slice), r->window_size);
     assert(r->send_buffer != NULL && "Malloc failed!");
 
     r->recv_seqno      = 1;
@@ -123,8 +121,6 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     uint32_t pkt_ackno = ntohl(pkt->ackno);
     uint16_t pkt_cksum = pkt->cksum;
 
-    fprintf(stderr, "RECV ackno:%u len:%u cksum:%u n:%lu\n", pkt_ackno, pkt_len, pkt_cksum, n);
-
     // check size of packet
     if(n < 8) return;
 
@@ -133,7 +129,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
     // verify checksum
     if(cksum(pkt, n) != pkt_cksum) return;
-
+    
     // mark acknowledged packets
     if (r->send_seqno < pkt_ackno) {
         for (uint16_t i = r->send_seqno; i < pkt_ackno; i++) {
@@ -172,7 +168,9 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     r->recv_buffer[index].allocated = 1;
 
     // initiate data output
-    if (pkt_seqno == r->recv_seqno) rel_output(r);
+    if (pkt_seqno == r->recv_seqno) {
+        rel_output(r);
+    }
 }
 
 
@@ -244,8 +242,6 @@ void send_ack(rel_t *r) {
 
     // compute checksum
     pkt.cksum = cksum(&pkt, 8);
-    fprintf(stderr, "SEND ACK: len:8 ackno:%lu cksum:%u\n",
-            r->recv_seqno, pkt.cksum);
     conn_sendpkt(r->c, (packet_t*) &pkt, 8);
 }
 
@@ -260,8 +256,6 @@ void send_packet(rel_t *r, uint32_t seq_no) {
     memcpy(pkt.data, s->segment, s->len);
     pkt.cksum = cksum(&pkt, 512);
 
-    fprintf(stderr, "SEND PKT: len:%u seqno:%u ackno:%lu segment:%s cksum:%u\n",
-            s->len, seq_no, r->recv_seqno, pkt.data, pkt.cksum);
     conn_sendpkt(r->c, &pkt, pkt.len);
 }
 
@@ -269,7 +263,7 @@ void rel_output (rel_t *r)
 {
     char ack_afterwards = 0;
 
-    while( r->recv_buffer[r->recv_seqno].allocated ) {
+    while( r->recv_buffer[r->recv_seqno % r->window_size].allocated) {
         slice* s = &(r->recv_buffer[r->recv_seqno % r->window_size]);
         size_t written = conn_output(
                                         r->c,
