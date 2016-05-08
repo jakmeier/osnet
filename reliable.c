@@ -123,8 +123,9 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     uint32_t pkt_ackno = ntohl(pkt->ackno);
     uint16_t pkt_cksum = pkt->cksum;
 
+    fprintf(stderr, "RECV ackno:%u len:%u cksum:%u n:%lu\n", pkt_ackno, pkt_len, pkt_cksum, n);
+
     // check size of packet
-    fprintf(stderr, "RECV ackno:%u len:%u cksum:%u\n", pkt_ackno, pkt_len, pkt_cksum);
     if(n < 8) return;
 
     // set pkt checksum to zero so that we can compute it again.
@@ -252,6 +253,7 @@ void send_packet(rel_t *r, uint32_t seq_no) {
     packet_t pkt;
     slice *s = &(r->send_buffer[seq_no % r->window_size]);
 
+    pkt.cksum = 0;
     pkt.len   = htons(s->len + 12);
     pkt.seqno = htonl(seq_no);
     pkt.ackno = htonl(r->recv_seqno);
@@ -275,7 +277,6 @@ void rel_output (rel_t *r)
                                         s->len - r->already_written
                                     );
 
-        fprintf(stderr, "written:%lu len:%u alwritten:%lu\n", written, s->len, r->already_written);
         if (written == s->len - r->already_written) {
             // full packet written
             s->allocated       = 0;
