@@ -285,7 +285,6 @@ void rel_output (rel_t *r)
         }
         else {
             // packet partially written
-            fprintf(stderr, "Partly Written");
             r->already_written += written;
             break;
         }
@@ -311,7 +310,7 @@ void rel_output (rel_t *r)
 
 void rel_timer ()
 {
-    //rel_read(rel_list);
+    rel_read(rel_list);
 
     /* Retransmit any packets that need to be retransmitted */
     slice* current_slice;
