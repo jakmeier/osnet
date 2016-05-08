@@ -33,12 +33,14 @@
 #define UNSET_SMALL_PACKET_ONLINE(flag)         (flag = flag & ~0x20)
 
 void send_packet(rel_t*, uint32_t);
+void save_pkt_to_file(packet_t *pkt);
 
 typedef struct slice {
     char allocated;
     char segment[500];
     uint16_t len;
 } slice;
+
 
 struct reliable_state {
     rel_t *next;        /* Linked list for traversing all connections */
@@ -55,6 +57,7 @@ struct reliable_state {
     size_t already_written;
 
     char flags;
+    FILE *f;
 
 };
 rel_t *rel_list;
@@ -147,6 +150,8 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
     // in case of an ack-packet,the function is done
     if (n == 8) return;
+
+    save_pkt_to_file(pkt);
 
     // check if seqno is in current window range
     uint32_t pkt_seqno = ntohl(pkt->seqno);
@@ -344,4 +349,11 @@ void rel_timer ()
     ){
         rel_destroy(rel_list);
     }
+}
+
+void save_pkt_to_file(packet_t *pkt){
+    FILE *f = fopen("packets", "ab");
+    fprintf(f,"PKT: len:%u seqno:%u ackno:%u \n", ntohs(pkt->len), ntohs(pkt->seqno), ntohs(pkt->ackno));
+    fclose(f);
+    return;
 }
