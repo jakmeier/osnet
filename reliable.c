@@ -222,6 +222,7 @@ void rel_read (rel_t *r)
     // EOF: Set flag.
     if (recieved_bytes == -1) {
         SET_EOF_READ(r->flags);
+        r->send_buffer[first_free % r->window_size].allocated = 1;
         return;
     }
 
