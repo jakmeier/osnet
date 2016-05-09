@@ -117,6 +117,7 @@ void rel_destroy (rel_t *r)
 
 void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+    //assert(n == 8 || n == 512 && "packet size is not 512 or 8");
     // n is equal to the whole packet size: 512/8
 
     // network to host endianess
@@ -127,12 +128,10 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     //fprintf(stderr, "RECV ackno:%u len:%u cksum:%u n:%lu\n", pkt_ackno, pkt_len, pkt_cksum, n);
 
     // check size of packet
-    if( n != 8 && n != 512) return;
-
-    // set pkt checksum to zero so that we can compute it again.
-    pkt->cksum = 0;
+    if( n < 8 || n != pkt_len) return;
 
     // verify checksum
+    pkt->cksum = 0;
     if(cksum(pkt, n) != pkt_cksum) return;
 
     // mark acknowledged packets
@@ -262,11 +261,11 @@ void send_packet(rel_t *r, uint32_t seq_no) {
     pkt.seqno = htonl(seq_no);
     pkt.ackno = htonl(r->recv_seqno);
     memcpy(pkt.data, s->segment, s->len);
-    pkt.cksum = cksum(&pkt, 512);
+    pkt.cksum = cksum(&pkt, s->len + 12);
 
     //fprintf(stderr, "SEND PKT: len:%u seqno:%u ackno:%lu segment:%s cksum:%u\n", s->len, seq_no, r->recv_seqno, pkt.data, pkt.cksum);
 
-    conn_sendpkt(r->c, &pkt, 512);
+    conn_sendpkt(r->c, &pkt, s->len + 12);
 }
 
 void rel_output (rel_t *r)
@@ -330,7 +329,8 @@ void rel_timer ()
         current_slice = &send_buffer[slice_no % window_size];
 
         // if packet is unackwnoledged
-        if(current_slice->allocated && current_slice->len != 0){
+        // MARTIN: if(current_slice->allocated && current_slice->len != 0){
+        if(current_slice->allocated){
             send_packet(rel_list, slice_no);
             all_ackwoledged = 0;
         }
