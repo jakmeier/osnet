@@ -55,6 +55,7 @@ struct reliable_state {
     size_t send_seqno;
     size_t window_size;
     size_t already_written;
+    size_t eof_seqno;
 
     char flags;
     FILE *f;
@@ -97,6 +98,7 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss, const struct c
     r->send_seqno      = 1;
     r->flags           = 0;
     r->already_written = 0;
+    r->eof_seqno = 0;
     SET_LAST_ALLOCATED_ALREADY_SENT(r->flags);
 
     return r;
@@ -117,15 +119,11 @@ void rel_destroy (rel_t *r)
 
 void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
-    //assert(n == 8 || n == 512 && "packet size is not 512 or 8");
-    // n is equal to the whole packet size: 512/8
 
     // network to host endianess
     uint16_t pkt_len   = ntohs(pkt->len);
     uint32_t pkt_ackno = ntohl(pkt->ackno);
     uint16_t pkt_cksum = pkt->cksum;
-
-    //fprintf(stderr, "RECV ackno:%u len:%u cksum:%u n:%lu\n", pkt_ackno, pkt_len, pkt_cksum, n);
 
     // check size of packet
     if( n < 8 || n != pkt_len) return;
@@ -133,6 +131,8 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     // verify checksum
     pkt->cksum = 0;
     if(cksum(pkt, n) != pkt_cksum) return;
+    
+    if ( n == 12) {fprintf(stderr, "RECV ackno:%u \nlen:%u \ncksum:%u \nn:%lu\nseqno:%u\n", pkt_ackno, pkt_len, pkt_cksum, n, ntohl(pkt->seqno));}
 
     // mark acknowledged packets
     if (r->send_seqno < pkt_ackno) {
@@ -149,6 +149,9 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
     // in case of an ack-packet,the function is done
     if (n == 8) return;
+
+    // disallow data packets after the EOF if we recieved it already
+    if ( EOF_RECV(r->flags) && ntohl(pkt->seqno) >= r->eof_seqno ) return ;
 
     save_pkt_to_file(pkt);
 
@@ -167,6 +170,7 @@ void rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     // store data in window
     if( pkt_len == 12 ){
         SET_EOF_RECV(r->flags);
+        r->eof_seqno = ntohl(pkt->seqno);
     }
 
     memcpy(r->recv_buffer[index].segment, pkt->data, pkt_len - 12);
@@ -223,6 +227,15 @@ void rel_read (rel_t *r)
     if (recieved_bytes == -1) {
         SET_EOF_READ(r->flags);
         r->send_buffer[first_free % r->window_size].allocated = 1;
+        fprintf(stderr, 
+            "EOF_READ.\n EOF_RECEIVED: %s \nAlready written: %lu\n EOF_READ: %s\n ALL_WRITTEN: %s\nRECV_SEQNO: %lu\n", 
+            EOF_RECV(r->flags) ? "True" : "False",  
+            r->already_written,
+            EOF_READ(r->flags) ? "True" : "False", 
+            ALL_WRITTEN(r->flags) ? "True" : "False",
+            r->recv_seqno
+        ); 
+        
         return;
     }
 
@@ -274,13 +287,35 @@ void rel_output (rel_t *r)
     char ack_afterwards = 0;
 
     while( r->recv_buffer[r->recv_seqno % r->window_size].allocated) {
+        
         slice* s = &(r->recv_buffer[r->recv_seqno % r->window_size]);
+
+        if(s->len - r->already_written == 0) { 
+            fprintf(stderr, 
+            "conn_output will be called with a length of zero now.\n EOF_RECEIVED: %s \nAlready written: %lu\n EOF_READ: %s\n ALL_WRITTEN: %s\nRECV_SEQNO: %lu\n", 
+            EOF_RECV(r->flags) ? "True" : "False",  
+            r->already_written,
+            EOF_READ(r->flags) ? "True" : "False", 
+            ALL_WRITTEN(r->flags) ? "True" : "False",
+            r->recv_seqno
+            ); 
+        }
         size_t written = conn_output(
                                         r->c,
                                         &(s->segment) + r->already_written ,
                                         s->len - r->already_written
                                     );
-
+        if(s->len - r->already_written == 0) { 
+            fprintf(stderr, 
+            "conn_output was called with a length of zero just before now.\n EOF_RECEIVED: %s \nAlready written: %lu\n EOF_READ: %s\n ALL_WRITTEN: %s\n, Written: %lu\n", 
+            EOF_RECV(r->flags) ? "True" : "False",  
+            r->already_written,
+            EOF_READ(r->flags) ? "True" : "False", 
+            ALL_WRITTEN(r->flags) ? "True" : "False",
+            written
+            ); 
+        }                          
+        
         if (written == s->len - r->already_written) {
             // full packet written
             s->allocated       = 0;
@@ -315,8 +350,9 @@ void rel_output (rel_t *r)
 
 void rel_timer ()
 {
-    rel_read(rel_list);
-
+    if (!EOF_READ(rel_list->flags)) { rel_read(rel_list); }
+    //send_ack(rel_list);
+    
     /* Retransmit any packets that need to be retransmitted */
     slice* current_slice;
 
@@ -330,7 +366,6 @@ void rel_timer ()
         current_slice = &send_buffer[slice_no % window_size];
 
         // if packet is unackwnoledged
-        // MARTIN: if(current_slice->allocated && current_slice->len != 0){
         if(current_slice->allocated){
             send_packet(rel_list, slice_no);
             all_ackwoledged = 0;
@@ -348,6 +383,7 @@ void rel_timer ()
         ALL_SENT_ACKNOWLEDGED(rel_list->flags) &&
         ALL_WRITTEN(rel_list->flags)
     ){
+        fprintf(stderr, "Destroy reliable connection now.\n");
         rel_destroy(rel_list);
     }
 }
